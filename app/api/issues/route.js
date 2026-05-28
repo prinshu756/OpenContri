@@ -126,12 +126,18 @@ export async function GET(request) {
     }))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-  const storedState = await readState();
-  const knownIssues = Array.isArray(storedState[repo.full_name]) ? storedState[repo.full_name] : [];
-  const newIssues = currentOpenIssues.filter((issue) => !knownIssues.includes(issue.number));
 
-  storedState[repo.full_name] = currentOpenIssues.map((issue) => issue.number);
-  await writeState(storedState);
+// found some issues in the production so I am commenting out if you are seeing this means you have issue in localhost so remove the comment of following lines of code 
+
+
+//   const storedState = await readState();
+//   const knownIssues = Array.isArray(storedState[repo.full_name]) ? storedState[repo.full_name] : [];
+//   const newIssues = currentOpenIssues.filter((issue) => !knownIssues.includes(issue.number));
+
+//   storedState[repo.full_name] = currentOpenIssues.map((issue) => issue.number);
+//   await writeState(storedState);
+
+const newIssues = [];
 
   return NextResponse.json({
     repo: {

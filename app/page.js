@@ -43,7 +43,6 @@ export default function Home() {
   const [repoData, setRepoData] = useState(null);
   const [issues, setIssues] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [toast, setToast] = useState(null);
   const [watchlist, setWatchlist] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -78,31 +77,6 @@ export default function Home() {
     }
   }, []);
 
-  const showBrowserNotification = useCallback((repo, freshIssues) => {
-    if (typeof window === 'undefined' || typeof window.Notification === 'undefined') {
-      return;
-    }
-
-    if (window.Notification.permission === 'granted') {
-      new window.Notification(`New issue opened in ${repo}`, {
-        body: freshIssues.slice(0, 3).map((issue) => `#${issue.number} ${issue.title}`).join('\n'),
-        tag: `opencontri-${repo}`,
-      });
-      return;
-    }
-
-    if (window.Notification.permission === 'default') {
-      window.Notification.requestPermission().then((permission) => {
-        if (permission === 'granted') {
-          new window.Notification(`New issue opened in ${repo}`, {
-            body: freshIssues.slice(0, 3).map((issue) => `#${issue.number} ${issue.title}`).join('\n'),
-            tag: `opencontri-${repo}`,
-          });
-        }
-      }).catch(() => {});
-    }
-  }, []);
-
   const fetchRepoIssues = useCallback(async (repo) => {
     if (!repo) return;
     setLoading(true);
@@ -110,66 +84,42 @@ export default function Home() {
 
     try {
       const response = await fetch(`/api/issues?repo=${encodeURIComponent(repo)}`);
-      const rawBody = await response.text();
-
-      let data;
-      try {
-        data = rawBody ? JSON.parse(rawBody) : {};
-      } catch {
-        throw new Error('The repository API returned invalid data. Refresh the app and try again.');
-      }
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || 'Unable to fetch repository data');
       }
 
-      const priorKnown = loadKnownIssueNumbers(repo);
-      const issuesPayload = data.issues || [];
-      const detectedNewIssues = issuesPayload.filter((issue) => !priorKnown.has(issue.number));
-
       setRepoData(data.repo);
-      setIssues(issuesPayload);
+      setIssues(data.issues || []);
       setLastRefresh(new Date().toISOString());
 
-      if (priorKnown.size > 0 && detectedNewIssues.length > 0) {
-        const notificationEntry = {
-          id: `${repo}:${Date.now()}`,
-          repo,
-          issues: detectedNewIssues,
-        };
+      const known = loadKnownIssueNumbers(repo);
+      const newOpenIssues = (data.issues || []).filter((issue) => !known.has(issue.number));
 
-        setNotifications((current) => [notificationEntry, ...current]);
-        setToast({
-          id: notificationEntry.id,
-          repo,
-          issues: detectedNewIssues,
-        });
-        showBrowserNotification(repo, detectedNewIssues);
+      if (newOpenIssues.length > 0) {
+        setNotifications((current) => [
+          {
+            id: `${repo}:${Date.now()}`,
+            repo,
+            issues: newOpenIssues
+          },
+          ...current
+        ]);
       }
 
-      saveKnownIssueNumbers(repo, issuesPayload.map((issue) => issue.number));
+      saveKnownIssueNumbers(repo, (data.issues || []).map((issue) => issue.number));
     } catch (err) {
       setError(err.message || 'Failed to load issues.');
     } finally {
       setLoading(false);
     }
-  }, [loadKnownIssueNumbers, saveKnownIssueNumbers, showBrowserNotification]);
+  }, [loadKnownIssueNumbers, saveKnownIssueNumbers]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     loadWatchlist();
   }, [loadWatchlist]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 7000);
-    return () => clearTimeout(timer);
-  }, [toast]);
-
-  useEffect(() => {
-    if (!selectedRepo) return;
-    fetchRepoIssues(selectedRepo);
-  }, [fetchRepoIssues, selectedRepo]);
 
   useEffect(() => {
     if (!selectedRepo) return;
@@ -208,30 +158,7 @@ export default function Home() {
   const newNotifications = useMemo(() => notifications.flatMap((entry) => entry.issues), [notifications]);
 
   return (
-    <>
-      <div className="toast-layer" aria-live="polite">
-        {toast && (
-          <div className="issue-toast" role="status">
-            <div className="toast-header">
-              <div>
-                <strong>New issue opened</strong>
-                <span>{toast.repo}</span>
-              </div>
-              <button className="toast-dismiss" type="button" onClick={() => setToast(null)}>Dismiss</button>
-            </div>
-            <p>{toast.issues.length} new open issue{toast.issues.length === 1 ? '' : 's'} detected for this repository.</p>
-            <ul className="toast-issues">
-              {toast.issues.slice(0, 3).map((issue) => (
-                <li key={`${issue.number}-${issue.title}`} className="toast-issue">
-                  <a href={issue.url} target="_blank" rel="noreferrer">#{issue.number} {issue.title}</a>
-                  <span className="status-pill">Open</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-      <main className="page-shell">
+    <main className="page-shell">
       <section className="hero-panel">
         <div className="hero-copy">
           <span className="eyebrow">OpenContri</span>
@@ -388,6 +315,5 @@ export default function Home() {
         )}
       </section>
     </main>
-    </>
   );
 }
